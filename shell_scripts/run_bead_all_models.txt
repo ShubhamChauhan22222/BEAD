@@ -1,0 +1,61 @@
+#!/bin/bash --login
+
+# Job Submission Options for CSF
+#$ -cwd                   # Run the job in the current directory
+#$ -l h_vmem=16G          # Set memory requirement
+#$ -pe smp 4              # Request 4 CPU cores
+#$ -N BEAD_AllModels      # Job name
+
+# Define workspace and dataset variables
+WORKSPACE="monotop_analysis"
+DATASET="monotop_200_A"
+
+# List of all NormFlow + ConvVAE model combinations
+MODELS=("Planar_ConvVAE"
+        "HouseholderSylvester_ConvVAE"
+        "IAF_ConvVAE"
+        "NSFAR_ConvVAE"
+        "OrthogonalSylvester_ConvVAE"
+        "TriangularSylvester_ConvVAE")
+
+# Navigate to BEAD directory (Assume it's stored in ~/BEAD)
+cd ~/BEAD/bead/
+
+# Step 1: Create a new workspace (only once), if not created
+# poetry run bead -m new_project -p $WORKSPACE "BaseProject"
+
+# Step 2: Move input data to the correct directory (only once), if not moved yet
+# mkdir -p workspaces/$WORKSPACE/data/csv/
+# cp ~/datasets/${DATASET}_input_data.csv workspaces/$WORKSPACE/data/csv/
+
+# Step 3: Convert CSV data to HDF5 format (only once)
+poetry run bead -m convert_csv -p $WORKSPACE "BaseProject"
+
+# Step 4: Preprocess inputs (only once)
+poetry run bead -m prepare_inputs -p $WORKSPACE "BaseProject"
+
+# Loop through each model and train
+for MODEL in "${MODELS[@]}"; do
+    PROJECT="${MODEL}_ep500"
+
+    # Step 5: Create a new project for the current model
+    poetry run bead -m new_project -p $WORKSPACE $PROJECT
+
+    # Step 6: Update project config to use the selected model
+    CONFIG_FILE="workspaces/$WORKSPACE/$PROJECT/config/${PROJECT}_config.py"
+    sed -i "s/c.model_name.*/c.model_name = \"$MODEL\"/" $CONFIG_FILE
+    sed -i 's/c.epochs.*/c.epochs = "100"/' $CONFIG_FILE
+    sed -i 's/c.intermittent_model_saving.*/c.intermittent_model_saving = "True"/' $CONFIG_FILE
+    sed -i 's/c.intermittent_saving_patience.*/c.intermittent_saving_patience = "100"/' $CONFIG_FILE
+
+    # Step 7: Train the model
+    poetry run bead -m train -p $WORKSPACE $PROJECT
+
+    # Step 8: Run inference (detection mode)
+    poetry run bead -m detect -p $WORKSPACE $PROJECT
+
+    # Step 9: Generate plots
+    poetry run bead -m plot -p $WORKSPACE $PROJECT
+
+done
+

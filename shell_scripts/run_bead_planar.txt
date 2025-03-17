@@ -1,0 +1,43 @@
+#!/bin/bash --login
+
+# Job Submission Options for CSF
+#$ -cwd                   # Run the job in the current directory
+#$ -l h_vmem=16G          # Set memory requirement
+#$ -pe smp 4              # Request 4 CPU cores
+#$ -N BEAD_PlanarConvVAE  # Job name
+
+# Define variables for workspace and project names
+WORKSPACE="monotop_analysis"
+PROJECT="PlanarConvVAE_ep500"
+
+# Navigate to BEAD directory (Assume it's stored in ~/BEAD)
+cd ~/BEAD/bead/
+
+# Step 1: Create a new workspace and project if not created already
+# poetry run bead -m new_project -p $WORKSPACE $PROJECT
+
+# Step 2: Move input data to the correct directory if data not moved already
+# mkdir -p workspaces/$WORKSPACE/data/csv/
+# cp ~/datasets/monotop_200_A_input_data.csv workspaces/$WORKSPACE/data/csv/
+
+# Step 3: Convert CSV data to HDF5 format
+poetry run bead -m convert_csv -p $WORKSPACE $PROJECT
+
+# Step 4: Preprocess inputs
+poetry run bead -m prepare_inputs -p $WORKSPACE $PROJECT
+
+# Step 5: Update project config to use Planar_ConvVAE, 500 epochs and to save every model after every 100 epochs
+CONFIG_FILE="workspaces/$WORKSPACE/$PROJECT/config/${PROJECT}_config.py"
+sed -i 's/c.model_name.*/c.model_name = "Planar_ConvVAE"/' $CONFIG_FILE
+sed -i 's/c.epochs.*/c.epochs = "100"/' $CONFIG_FILE
+sed -i 's/c.intermittent_model_saving.*/c.intermittent_model_saving = "True"/' $CONFIG_FILE
+sed -i 's/c.intermittent_saving_patience.*/c.intermittent_saving_patience = "100"/' $CONFIG_FILE
+
+# Step 6: Train the model for 500 epochs, saving every 100 epochs
+poetry run bead -m train -p $WORKSPACE $PROJECT 
+
+# Step 7: Run inference (detection mode)
+# poetry run bead -m detect -p $WORKSPACE $PROJECT
+
+# Step 8: Generate all plots
+poetry run bead -m plot -p $WORKSPACE $PROJECT
